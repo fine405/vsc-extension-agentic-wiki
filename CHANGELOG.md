@@ -2,6 +2,24 @@
 
 All notable changes to the "Agentic Wiki" extension will be documented in this file.
 
+## [0.1.1] - 2025-05-05
+
+### Performance
+
+- Implemented fully asynchronous file crawling to prevent blocking the main thread
+- Added incremental file processing to avoid reprocessing unchanged files
+- Implemented streaming file processing to reduce memory usage with large repositories
+- Added workspace-specific file hash caching for better performance across projects
+- Improved progress reporting with detailed file processing status
+
+### Improved
+
+- Enhanced cancellation support throughout the file processing pipeline
+- Added non-blocking cache initialization to improve extension startup time
+- Implemented automatic cleanup of old cache entries
+- Added batch processing for large file sets to prevent memory issues
+- Improved error handling and recovery during file processing
+
 ## [0.1.0] - 2025-05-04
 
 ### Added
