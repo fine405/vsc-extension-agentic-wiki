@@ -5,10 +5,21 @@ import { Abstraction, FileInfo, IdentifyAbstractionsPrepResult, SharedStore, Nod
 import { callLlm } from "../services/llm";
 import { getLanguageInstruction, getLanguageHint } from "../utils/languageUtils";
 import { formatAbstractionListing } from "../utils/fileUtils";
+import { LoggerService } from "../services/logger";
+import { ProgressManager, ProcessStage } from "../services/progress/progressManager";
 
 export default class IdentifyAbstractionsNode extends Node<SharedStore, NodeParams> {
+    private logger = LoggerService.getInstance();
+    private progressManager: ProgressManager = ProgressManager.getInstance();
+
     // Build LLM context and parameters
     async prep(shared: SharedStore): Promise<IdentifyAbstractionsPrepResult> {
+        // Get the progress manager from params
+        this.progressManager = (this._params.progressManager as ProgressManager) || ProgressManager.getInstance();
+
+        // Start the identifying abstractions stage
+        this.progressManager.startStage(ProcessStage.IDENTIFYING_ABSTRACTIONS);
+
         const filesData: FileInfo[] = shared.files || [];
         const projectName: string = shared.projectName || "Unknown Project";
         const language: string = shared.language || "english";
@@ -19,8 +30,12 @@ export default class IdentifyAbstractionsNode extends Node<SharedStore, NodePara
             throw new Error("Cannot identify abstractions because there is no file data.");
         }
 
+        this.progressManager.updateStageProgress(10, "Preparing file context for analysis...");
+
         const { context, fileInfo } = this.createLlmContext(filesData);
         const fileListingForPrompt = formatAbstractionListing(fileInfo);
+
+        this.progressManager.updateStageProgress(30, "Context prepared, ready to identify abstractions");
 
         return {
             context,
@@ -38,8 +53,13 @@ export default class IdentifyAbstractionsNode extends Node<SharedStore, NodePara
     // Call LLM to identify abstractions and validate results
     async exec(preRes: IdentifyAbstractionsPrepResult): Promise<Abstraction[]> {
         const { context, fileListingForPrompt, fileCount, projectName, language, useCache, maxAbstractionNum } = preRes;
-        console.log("Using LLM to identify abstractions...");
+        this.logger.info("Using LLM to identify abstractions...");
+
+        this.progressManager.updateStageProgress(40, "Building prompt for abstraction identification...");
+
         const prompt = this.buildPrompt(projectName, context, language, maxAbstractionNum, fileListingForPrompt);
+
+        this.progressManager.updateStageProgress(50, "Calling LLM to identify abstractions...");
 
         // Pass the extension context from flow parameters if available
         const response = await callLlm(prompt, {
@@ -49,15 +69,23 @@ export default class IdentifyAbstractionsNode extends Node<SharedStore, NodePara
             model: preRes.model,
         });
 
+        this.progressManager.updateStageProgress(80, "Validating LLM response...");
+
         const validatedAbstractions = this.parseAndValidateResponse(response, fileCount);
 
-        console.log(`Identified ${validatedAbstractions.length} abstractions.`);
+        this.logger.info(`Identified ${validatedAbstractions.length} abstractions.`);
+        this.progressManager.updateStageProgress(100, `Identified ${validatedAbstractions.length} abstractions`);
+
         return validatedAbstractions;
     }
 
     // Store results in shared storage
     async post(shared: SharedStore, _: unknown, execRes: Abstraction[]): Promise<string | undefined> {
         shared.abstractions = execRes;
+
+        // Complete the stage
+        this.progressManager.completeStage();
+
         return undefined;
     }
 

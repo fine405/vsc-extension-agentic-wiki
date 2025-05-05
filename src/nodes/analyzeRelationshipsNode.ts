@@ -12,17 +12,30 @@ import {
 import { callLlm } from "../services/llm";
 import { getLanguageInstruction, getLanguageHint, getLanguageListNote } from "../utils/languageUtils";
 import { formatFileContent, formatAbstractionListing } from "../utils/fileUtils";
+import { LoggerService } from "../services/logger";
+import { ProgressManager, ProcessStage } from "../services/progress/progressManager";
 
 export default class AnalyzeRelationshipsNode extends Node<SharedStore, NodeParams> {
+    private logger = LoggerService.getInstance();
+    private progressManager: ProgressManager = ProgressManager.getInstance();
+
     /**
      * Prepare context and data needed for relationship analysis
      */
     async prep(shared: SharedStore): Promise<AnalyzeRelationshipsPrepResult> {
+        // Get the progress manager from params
+        this.progressManager = (this._params.progressManager as ProgressManager) || ProgressManager.getInstance();
+
+        // Start the analyzing relationships stage
+        this.progressManager.startStage(ProcessStage.ANALYZING_RELATIONSHIPS);
+
         const abstractions: Abstraction[] = shared.abstractions || [];
         const filesData: FileInfo[] = shared.files || [];
         const projectName: string = shared.projectName || "Unknown Project";
         const language: string = shared.language || "english";
         const useCache: boolean = shared.useCache !== undefined ? shared.useCache : true;
+
+        this.progressManager.updateStageProgress(10, "Preparing abstraction context...");
 
         // Create context with abstraction names, indices, descriptions, and relevant file snippets
         let context = "Identified Abstractions:\n";
@@ -46,11 +59,15 @@ export default class AnalyzeRelationshipsNode extends Node<SharedStore, NodePara
             abstr.files.forEach(idx => allRelevantIndices.add(idx));
         }
 
+        this.progressManager.updateStageProgress(30, "Collecting relevant file snippets...");
+
         // Add relevant file snippets
         context += "\nRelevant File Snippets (Referenced by Index and Path):\n";
 
         // Format file content using utility function
         context += formatFileContent(filesData, Array.from(allRelevantIndices).sort());
+
+        this.progressManager.updateStageProgress(50, "Context prepared for relationship analysis");
 
         return {
             context,
@@ -70,10 +87,13 @@ export default class AnalyzeRelationshipsNode extends Node<SharedStore, NodePara
     async exec(prepRes: AnalyzeRelationshipsPrepResult): Promise<RelationshipsResult> {
         const { context, abstractionListing, projectName, language, useCache, numAbstractions } = prepRes;
 
-        console.log("Using LLM to analyze relationships...");
+        this.logger.info("Using LLM to analyze relationships...");
+        this.progressManager.updateStageProgress(60, "Building prompt for relationship analysis...");
 
         // Build prompt
         const prompt = this.buildPrompt(projectName, abstractionListing, context, language);
+
+        this.progressManager.updateStageProgress(70, "Calling LLM to analyze relationships...");
 
         // Call LLM with extension context
         const response = await callLlm(prompt, {
@@ -83,10 +103,17 @@ export default class AnalyzeRelationshipsNode extends Node<SharedStore, NodePara
             model: prepRes.model,
         });
 
+        this.progressManager.updateStageProgress(90, "Validating relationship data...");
+
         // Parse and validate response
         const result = this.parseAndValidateResponse(response, numAbstractions);
 
-        console.log("Project summary and relationship details generated.");
+        this.logger.info("Project summary and relationship details generated.");
+        this.progressManager.updateStageProgress(
+            100,
+            `Identified ${result.details.length} relationships between abstractions`,
+        );
+
         return result;
     }
 
@@ -97,6 +124,10 @@ export default class AnalyzeRelationshipsNode extends Node<SharedStore, NodePara
         // Structure is now {"summary": str, "details": [{"from": int, "to": int, "label": str}]}
         // summary and label might be translated
         shared.relationships = execRes;
+
+        // Complete the stage
+        this.progressManager.completeStage();
+
         return undefined;
     }
 

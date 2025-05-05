@@ -5,8 +5,8 @@ import { SharedStore } from "../types";
 import { secretsManager } from "../extension";
 import { ProgressManager, ProcessStage } from "../services/progress/progressManager";
 
-export function registerGenerateCommand(context: vscode.ExtensionContext) {
-    const generate = vscode.commands.registerCommand("agentic-wiki.generate", async () => {
+export function registerForceGenerateCommand(context: vscode.ExtensionContext) {
+    const forceGenerate = vscode.commands.registerCommand("agentic-wiki.forceGenerate", async () => {
         // Get the progress manager instance
         const progressManager = ProgressManager.getInstance();
 
@@ -17,7 +17,7 @@ export function registerGenerateCommand(context: vscode.ExtensionContext) {
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: "Generating Wiki page...",
+                title: "Force Generating Wiki page (ignoring cache)...",
                 cancellable: true,
             },
             async (progress, token) => {
@@ -48,16 +48,24 @@ export function registerGenerateCommand(context: vscode.ExtensionContext) {
                     // Get the model from shared state or use default
                     const model = shared.llmModel || "";
 
-                    progressManager.updateStageProgress(100, "Configuration loaded");
+                    // Force useCache to false to ignore cache
+                    shared = {
+                        ...shared,
+                        useCache: false
+                    };
+
+                    progressManager.updateStageProgress(100, "Configuration loaded (cache disabled)");
                     progressManager.completeStage();
 
                     // Add API key, model, extension context, and progress manager to flow parameters
+                    // Force useCache to false to ignore cache
                     flow.setParams({
                         ...shared,
                         llmApiKey: apiKey,
                         llmModel: model,
                         context,
                         progressManager,
+                        useCache: false, // Force disable cache
                     });
 
                     // Run the flow
@@ -65,7 +73,7 @@ export function registerGenerateCommand(context: vscode.ExtensionContext) {
 
                     // Complete the process
                     progressManager.startStage(ProcessStage.COMPLETED);
-                    progressManager.updateStageProgress(100, "Wiki page successfully generated!");
+                    progressManager.updateStageProgress(100, "Wiki page successfully generated (without cache)!");
 
                     // Wait a moment before opening the wiki
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -77,12 +85,12 @@ export function registerGenerateCommand(context: vscode.ExtensionContext) {
                     const currentStage = progressManager.getCurrentStage();
 
                     vscode.window.showErrorMessage(
-                        `Failed to generate Wiki page during ${currentStage} stage: ${error instanceof Error ? error.message : String(error)}`,
+                        `Failed to force generate Wiki page during ${currentStage} stage: ${error instanceof Error ? error.message : String(error)}`,
                     );
                 }
             },
         );
     });
 
-    context.subscriptions.push(generate);
+    context.subscriptions.push(forceGenerate);
 }

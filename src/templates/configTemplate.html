@@ -33,6 +33,80 @@
                 color: var(--vscode-input-foreground);
                 border-radius: 2px;
             }
+
+            /* Custom model selector styles */
+            .custom-select-container {
+                position: relative;
+                width: 100%;
+            }
+
+            .custom-select-trigger {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--vscode-input-border);
+                background-color: var(--vscode-input-background);
+                color: var(--vscode-input-foreground);
+                border-radius: 2px;
+                cursor: pointer;
+            }
+
+            .custom-select-trigger:after {
+                content: "▼";
+                font-size: 0.7em;
+                margin-left: 10px;
+            }
+
+            .custom-select-options {
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                max-height: 300px;
+                overflow-y: auto;
+                background-color: var(--vscode-input-background);
+                border: 1px solid var(--vscode-input-border);
+                border-top: none;
+                border-radius: 0 0 2px 2px;
+                z-index: 10;
+                display: none;
+            }
+
+            .custom-select-options.open {
+                display: block;
+            }
+
+            .custom-select-option {
+                padding: 8px;
+                cursor: pointer;
+            }
+
+            .custom-select-option:hover {
+                background-color: var(--vscode-list-hoverBackground);
+            }
+
+            .custom-select-option.selected {
+                background-color: var(--vscode-list-activeSelectionBackground);
+                color: var(--vscode-list-activeSelectionForeground);
+            }
+
+            .model-group-header {
+                padding: 6px 8px;
+                font-weight: bold;
+                background-color: var(--vscode-editor-lineHighlightBackground);
+                border-bottom: 1px solid var(--vscode-panel-border);
+                border-top: 1px solid var(--vscode-panel-border);
+                position: sticky;
+                top: 0;
+            }
+
+            .model-price {
+                font-size: 0.9em;
+                color: var(--vscode-descriptionForeground);
+                margin-left: 5px;
+            }
             .form-group textarea {
                 height: 80px;
                 font-family: monospace;
@@ -88,7 +162,15 @@
 
             <div class="form-group">
                 <label for="llmModel">LLM Model</label>
-                <select id="llmModel">
+                <div class="custom-select-container">
+                    <div class="custom-select-trigger" id="modelSelectTrigger">
+                        <span id="selectedModelText">Loading models...</span>
+                    </div>
+                    <div class="custom-select-options" id="modelSelectOptions">
+                        <!-- Options will be populated by JavaScript -->
+                    </div>
+                </div>
+                <select id="llmModel" style="display: none">
                     <option value="">Loading models...</option>
                 </select>
                 <div class="description">Select a model to use (free models are listed first)</div>
@@ -190,18 +272,91 @@
                 // Update model dropdown with fetched models
                 function updateModelDropdown(models, selectedModel) {
                     const modelSelect = document.getElementById("llmModel");
-                    modelSelect.innerHTML = ""; // Clear existing options
+                    const modelSelectOptions = document.getElementById("modelSelectOptions");
+                    const selectedModelText = document.getElementById("selectedModelText");
+
+                    // Clear existing options
+                    modelSelect.innerHTML = "";
+                    modelSelectOptions.innerHTML = "";
 
                     if (!models || models.length === 0) {
                         const option = document.createElement("option");
                         option.value = "";
                         option.textContent = "No models available or API key not set";
                         modelSelect.appendChild(option);
+                        selectedModelText.textContent = "No models available or API key not set";
                         return;
                     }
 
-                    // Add models to dropdown
+                    // Separate free and paid models
+                    const freeModels = [];
+                    const paidModels = [];
+
                     models.forEach(model => {
+                        const promptPrice = parseFloat(model.pricing.prompt);
+                        const completionPrice = parseFloat(model.pricing.completion);
+                        const totalPrice = promptPrice + completionPrice;
+
+                        if (totalPrice === 0) {
+                            freeModels.push(model);
+                        } else {
+                            paidModels.push(model);
+                        }
+                    });
+
+                    // Add free models group
+                    if (freeModels.length > 0) {
+                        const freeHeader = document.createElement("div");
+                        freeHeader.className = "model-group-header";
+                        freeHeader.textContent = "Free Models";
+                        modelSelectOptions.appendChild(freeHeader);
+
+                        addModelsToDropdown(freeModels, modelSelect, modelSelectOptions);
+                    }
+
+                    // Add paid models group
+                    if (paidModels.length > 0) {
+                        const paidHeader = document.createElement("div");
+                        paidHeader.className = "model-group-header";
+                        paidHeader.textContent = "Paid Models";
+                        modelSelectOptions.appendChild(paidHeader);
+
+                        addModelsToDropdown(paidModels, modelSelect, modelSelectOptions);
+                    }
+
+                    // Set selected model if provided
+                    if (selectedModel) {
+                        modelSelect.value = selectedModel;
+
+                        // Update the displayed text
+                        const selectedOption = Array.from(modelSelect.options).find(option => option.value === selectedModel);
+                        if (selectedOption) {
+                            selectedModelText.textContent = selectedOption.textContent;
+                        }
+
+                        // Mark the selected option in the custom dropdown
+                        const customOptions = modelSelectOptions.querySelectorAll(".custom-select-option");
+                        customOptions.forEach(option => {
+                            if (option.dataset.value === selectedModel) {
+                                option.classList.add("selected");
+                            }
+                        });
+                    } else if (modelSelect.options.length > 0) {
+                        // Select the first option if no model is selected
+                        modelSelect.selectedIndex = 0;
+                        selectedModelText.textContent = modelSelect.options[0].textContent;
+
+                        const firstOption = modelSelectOptions.querySelector(".custom-select-option");
+                        if (firstOption) {
+                            firstOption.classList.add("selected");
+                        }
+                    }
+                }
+
+                // Helper function to add models to both the hidden select and custom dropdown
+                function addModelsToDropdown(models, modelSelect, modelSelectOptions) {
+                    models.forEach(model => {
+                        // Add to hidden select element
                         const option = document.createElement("option");
                         option.value = model.id;
 
@@ -209,20 +364,66 @@
                         const promptPrice = parseFloat(model.pricing.prompt);
                         const completionPrice = parseFloat(model.pricing.completion);
                         const totalPrice = promptPrice + completionPrice;
-                        const priceText = totalPrice === 0 ? "Free" : `$${totalPrice.toFixed(7)}/token`;
+                        const isFree = totalPrice === 0;
+                        const priceText = totalPrice === 0 ? "" : `$${totalPrice.toFixed(7)}/token`;
 
-                        option.textContent = `${model.name} (${priceText})`;
+                        const displayText = isFree ? model.name : `${model.name} (${priceText})`;
+                        option.textContent = displayText;
                         modelSelect.appendChild(option);
-                    });
 
-                    // Set selected model if provided
-                    if (selectedModel) {
-                        modelSelect.value = selectedModel;
-                    }
+                        // Add to custom dropdown
+                        const customOption = document.createElement("div");
+                        customOption.className = "custom-select-option";
+                        customOption.dataset.value = model.id;
+                        customOption.innerHTML = `${model.name} <span class="model-price">${priceText}</span>`;
+
+                        // Add click event
+                        customOption.addEventListener("click", function() {
+                            // Update hidden select
+                            modelSelect.value = model.id;
+
+                            // Update displayed text
+                            document.getElementById("selectedModelText").textContent = displayText;
+
+                            // Update selected class
+                            const allOptions = modelSelectOptions.querySelectorAll(".custom-select-option");
+                            allOptions.forEach(opt => opt.classList.remove("selected"));
+                            customOption.classList.add("selected");
+
+                            // Close dropdown
+                            modelSelectOptions.classList.remove("open");
+                        });
+
+                        modelSelectOptions.appendChild(customOption);
+                    });
                 }
 
                 // Fill the form
                 document.addEventListener("DOMContentLoaded", () => {
+                    // Set up custom dropdown behavior
+                    const modelSelectTrigger = document.getElementById("modelSelectTrigger");
+                    const modelSelectOptions = document.getElementById("modelSelectOptions");
+
+                    // Toggle dropdown when clicking on the trigger
+                    modelSelectTrigger.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        modelSelectOptions.classList.toggle("open");
+                    });
+
+                    // Close dropdown when clicking outside
+                    document.addEventListener("click", function(e) {
+                        if (!modelSelectTrigger.contains(e.target) && !modelSelectOptions.contains(e.target)) {
+                            modelSelectOptions.classList.remove("open");
+                        }
+                    });
+
+                    // Close dropdown when pressing Escape
+                    document.addEventListener("keydown", function(e) {
+                        if (e.key === "Escape") {
+                            modelSelectOptions.classList.remove("open");
+                        }
+                    });
+
                     // Set values for other fields
                     document.getElementById("llmApiKey").value = config.llmApiKey || "";
 
@@ -261,9 +462,12 @@
 
                 // Save configuration
                 function saveConfig() {
+                    // Get the selected model from the hidden select element
+                    const modelSelect = document.getElementById("llmModel");
+
                     const newConfig = {
                         llmApiKey: document.getElementById("llmApiKey").value,
-                        llmModel: document.getElementById("llmModel").value,
+                        llmModel: modelSelect.value,
                         localDir: document.getElementById("localDir").value || workspaceFolder,
                         projectName: document.getElementById("projectName").value || null,
                         outputDir: document.getElementById("outputDir").value,

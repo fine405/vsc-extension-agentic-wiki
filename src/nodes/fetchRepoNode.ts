@@ -2,27 +2,23 @@ import path from "path";
 import { Node } from "pocketflow";
 import { crawlLocalFilesAsync } from "../services/file";
 import { FileInfo, SharedStore, NodeParams } from "../types";
-import * as vscode from "vscode";
 import { LoggerService } from "../services/logger";
+import { ProgressManager, ProcessStage } from "../services/progress/progressManager";
 
 export default class FetchRepoNode extends Node<SharedStore, NodeParams> {
-    private progress: vscode.Progress<{ message?: string; increment?: number }> | undefined;
-    private token: vscode.CancellationToken | undefined;
     private logger = LoggerService.getInstance();
+    private progressManager: ProgressManager = ProgressManager.getInstance();
 
     async prep(shared: SharedStore): Promise<SharedStore> {
         // Read repo from shared
         const projectName = path.basename(path.resolve(shared.localDir));
         shared.projectName = projectName;
 
-        // Store progress and token if available from params
-        if (this._params.progress) {
-            this.progress = this._params.progress as vscode.Progress<{ message?: string; increment?: number }>;
-        }
+        // Get the progress manager from params
+        this.progressManager = (this._params.progressManager as ProgressManager) || ProgressManager.getInstance();
 
-        if (this._params.token) {
-            this.token = this._params.token as vscode.CancellationToken;
-        }
+        // Start the file fetching stage
+        this.progressManager.startStage(ProcessStage.FETCHING_FILES);
 
         return shared;
     }
@@ -32,10 +28,10 @@ export default class FetchRepoNode extends Node<SharedStore, NodeParams> {
 
         try {
             // Report initial progress
-            this.reportProgress(0, "Scanning directory...");
+            this.progressManager.updateStageProgress(0, "Scanning directory...");
 
             // Check for cancellation
-            if (this.token?.isCancellationRequested) {
+            if (this.progressManager.isCancelled()) {
                 throw new Error("Operation cancelled by user");
             }
 
@@ -51,13 +47,14 @@ export default class FetchRepoNode extends Node<SharedStore, NodeParams> {
                     const percent = Math.round((current / total) * 100);
                     const shortPath =
                         filePath.length > 30 ? "..." + filePath.substring(filePath.length - 30) : filePath;
-                    this.reportProgress(
-                        (percent / 100) * 30, // Use 30% of the total progress bar for file scanning
+
+                    this.progressManager.updateStageProgress(
+                        percent,
                         `Scanning files: ${percent}% (${current}/${total}) - ${shortPath}`,
                     );
 
                     // Check for cancellation during processing
-                    if (this.token?.isCancellationRequested) {
+                    if (this.progressManager.isCancelled()) {
                         throw new Error("Operation cancelled by user");
                     }
                 },
@@ -68,7 +65,7 @@ export default class FetchRepoNode extends Node<SharedStore, NodeParams> {
             }
 
             this.logger.info(`Fetched ${result.files.length} files.`);
-            this.reportProgress(30, `Found ${result.files.length} files to process`);
+            this.progressManager.updateStageProgress(100, `Found ${result.files.length} files to process`);
 
             return result.files;
         } catch (error) {
@@ -80,12 +77,10 @@ export default class FetchRepoNode extends Node<SharedStore, NodeParams> {
     async post(shared: SharedStore, _: unknown, execRes: FileInfo[]): Promise<string | undefined> {
         // Store the repo in shared
         shared.files = execRes;
-        return undefined;
-    }
 
-    private reportProgress(increment: number, message: string): void {
-        if (this.progress) {
-            this.progress.report({ increment, message });
-        }
+        // Complete the stage
+        this.progressManager.completeStage();
+
+        return undefined;
     }
 }

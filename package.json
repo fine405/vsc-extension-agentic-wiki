@@ -3,7 +3,7 @@
     "displayName": "Agentic Wiki (Beta)",
     "preview": true,
     "description": "The Agentic Wiki For Your Codebase",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "publisher": "fine405",
     "author": {
         "name": "fine"
@@ -43,6 +43,10 @@
             {
                 "command": "agentic-wiki.generate",
                 "title": "Agentic Wiki: Generate"
+            },
+            {
+                "command": "agentic-wiki.forceGenerate",
+                "title": "Agentic Wiki: Force Generate (Ignore Cache)"
             },
             {
                 "command": "agentic-wiki.open",

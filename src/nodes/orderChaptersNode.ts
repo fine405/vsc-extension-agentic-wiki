@@ -4,14 +4,27 @@ import { callLlm } from "../services/llm";
 import { ChapterOrderPreResult, SharedStore, NodeParams } from "../types";
 import { getLanguageListNote, capitalizeFirstLetter } from "../utils/languageUtils";
 import { formatAbstractionListing } from "../utils/fileUtils";
+import { LoggerService } from "../services/logger";
+import { ProgressManager, ProcessStage } from "../services/progress/progressManager";
 
 export default class OrderChaptersNode extends Node<SharedStore, NodeParams> {
+    private logger = LoggerService.getInstance();
+    private progressManager: ProgressManager = ProgressManager.getInstance();
+
     async prep(shared: SharedStore): Promise<ChapterOrderPreResult> {
+        // Get the progress manager from params
+        this.progressManager = (this._params.progressManager as ProgressManager) || ProgressManager.getInstance();
+
+        // Start the ordering chapters stage
+        this.progressManager.startStage(ProcessStage.ORDERING_CHAPTERS);
+
         const abstractions = shared.abstractions; // Names/descriptions may be translated
         const relationships = shared.relationships; // Summary/labels may be translated
         const projectName = shared.projectName || "";
         const language = shared.language || "english";
         const useCache = shared.useCache !== undefined ? shared.useCache : true;
+
+        this.progressManager.updateStageProgress(20, "Preparing abstraction context for ordering...");
 
         // Prepare context for LLM
         const abstractionInfoForPrompt: Array<{ index: number; name: string }> = [];
@@ -38,6 +51,8 @@ export default class OrderChaptersNode extends Node<SharedStore, NodeParams> {
         const listLangNote = getLanguageListNote(language);
         const apiKey = shared.llmApiKey;
 
+        this.progressManager.updateStageProgress(40, "Context prepared for chapter ordering");
+
         return {
             abstractionListing,
             context,
@@ -53,7 +68,8 @@ export default class OrderChaptersNode extends Node<SharedStore, NodeParams> {
     async exec(prepRes: ChapterOrderPreResult): Promise<number[]> {
         const { abstractionListing, context, numAbstractions, projectName, listLangNote, useCache } = prepRes;
 
-        console.log("Determining chapter order using LLM...");
+        this.logger.info("Determining chapter order using LLM...");
+        this.progressManager.updateStageProgress(50, "Building prompt for chapter ordering...");
 
         // No need to change language in prompt instructions, just sort based on structure
         // Input names may be translated, hence the note
@@ -80,12 +96,17 @@ export default class OrderChaptersNode extends Node<SharedStore, NodeParams> {
 
     Now, provide the YAML output:
     `;
+
+        this.progressManager.updateStageProgress(60, "Calling LLM to determine chapter order...");
+
         const response = await callLlm(prompt, {
             llmApiKey: prepRes.apiKey,
             useCache,
             context: this._params.context,
             model: prepRes.model,
         });
+
+        this.progressManager.updateStageProgress(80, "Validating chapter order...");
 
         // --- Validation ---
         const yamlStr = response.trim().split("```yaml")[1].split("```")[0].trim();
@@ -134,13 +155,22 @@ export default class OrderChaptersNode extends Node<SharedStore, NodeParams> {
             );
         }
 
-        console.log(`Determined chapter order (indices): ${orderedIndices}`);
+        this.logger.info(`Determined chapter order (indices): ${orderedIndices}`);
+        this.progressManager.updateStageProgress(
+            100,
+            `Determined optimal chapter order for ${orderedIndices.length} chapters`,
+        );
+
         return orderedIndices; // Return list of indices
     }
 
     async post(shared: SharedStore, _: ChapterOrderPreResult, execRes: number[]): Promise<string | undefined> {
         // execRes is already the ordered index list
         shared.chapterOrder = execRes; // Index list
+
+        // Complete the stage
+        this.progressManager.completeStage();
+
         return undefined;
     }
 }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { registerGenerateCommand } from "./commands/generateCommand";
+import { registerForceGenerateCommand } from "./commands/forceGenerateCommand";
 import { registerOpenCommand } from "./commands/openCommand";
 import { registerConfigCommand } from "./commands/configCommand";
 import { registerEventListeners } from "./listeners";
@@ -29,6 +30,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     registerGenerateCommand(context);
+    registerForceGenerateCommand(context);
     registerOpenCommand(context);
     registerConfigCommand(context);
 
