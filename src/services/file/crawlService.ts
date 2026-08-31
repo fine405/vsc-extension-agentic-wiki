@@ -14,7 +14,7 @@ interface CrawlResult {
  * @param directory Local directory path
  * @param includePatterns File patterns to include (e.g., ["*.py", "*.js"])
  * @param excludePatterns File patterns to exclude (e.g., ["tests/*"])
- * @param maxFileSize Maximum file size (bytes)
+ * @param maxFileSize Maximum file size (KB)
  * @param useRelativePaths Whether to use paths relative to the directory
  * @returns {CrawlResult} Object containing file paths and contents
  */
@@ -107,7 +107,8 @@ export function crawlLocalFiles(
             }
 
             // Check file size
-            if (maxFileSize && stats.size > maxFileSize) {
+            // maxFileSize is specified in KB, stats.size is in bytes
+            if (maxFileSize && stats.size > maxFileSize * 1024) {
                 continue;
             }
 
